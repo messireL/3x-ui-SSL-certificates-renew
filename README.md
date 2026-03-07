@@ -102,19 +102,19 @@ sudo bash install.sh --auto
 ### 3. Явно указать IP и домен
 
 ```bash
-sudo bash install.sh --id 89.44.76.8 --san s02.shaten.su
+sudo bash install.sh --id <public-ip> --san <dns-name>
 ```
 
 ### 4. Только домен
 
 ```bash
-sudo bash install.sh --id s02.shaten.su
+sudo bash install.sh --id <dns-name>
 ```
 
 ### 5. Если 80 порт занят и используется webroot
 
 ```bash
-sudo bash install.sh --id s02.shaten.su --challenge webroot --webroot /var/www/html
+sudo bash install.sh --id <dns-name> --challenge webroot --webroot /var/www/html
 ```
 
 ---
@@ -200,7 +200,7 @@ openssl x509 -in /root/cert/ip/<ID>/fullchain.pem -noout -enddate -subject
 Пример:
 
 ```bash
-openssl x509 -in /root/cert/ip/89.44.76.8/fullchain.pem -noout -enddate -subject
+openssl x509 -in /root/cert/ip/<public-ip>/fullchain.pem -noout -enddate -subject
 ```
 
 ### Проверка cron
@@ -234,7 +234,10 @@ sudo /opt/3xuisslcert/xui-certctl postdeploy
 ### Переустановить сертификат через acme.sh и перепривязать reloadcmd
 
 ```bash
-sudo /root/.acme.sh/acme.sh --install-cert -d <ID> --ecc   --fullchain-file /root/cert/ip/<ID>/fullchain.pem   --key-file       /root/cert/ip/<ID>/private.key   --reloadcmd      "/opt/3xuisslcert/xui-certctl postdeploy"
+sudo /root/.acme.sh/acme.sh --install-cert -d <ID> --ecc \
+  --fullchain-file /root/cert/ip/<ID>/fullchain.pem \
+  --key-file       /root/cert/ip/<ID>/private.key \
+  --reloadcmd      "/opt/3xuisslcert/xui-certctl postdeploy"
 ```
 
 ---
@@ -309,5 +312,8 @@ sudo bash uninstall.sh
 Если после обновления сертификата панель **3x-ui / x-ui** не перезапускается автоматически, нужно перепривязать `reloadcmd`:
 
 ```bash
-sudo /root/.acme.sh/acme.sh --install-cert -d <ID> --ecc   --fullchain-file /root/cert/ip/<ID>/fullchain.pem   --key-file       /root/cert/ip/<ID>/private.key   --reloadcmd      "/opt/3xuisslcert/xui-certctl postdeploy"
+sudo /root/.acme.sh/acme.sh --install-cert -d <ID> --ecc \
+  --fullchain-file /root/cert/ip/<ID>/fullchain.pem \
+  --key-file       /root/cert/ip/<ID>/private.key \
+  --reloadcmd      "/opt/3xuisslcert/xui-certctl postdeploy"
 ```

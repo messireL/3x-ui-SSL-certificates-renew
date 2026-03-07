@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v1.0.3
+- fixed postdeploy when canonical certificate path equals destination path
+- x-ui restart now completes successfully after install/renew
+- README examples made generic without project-specific domain or IP
+
 ## v1.0.2
 - project path changed to /opt/3xuisslcert
 - config moved to /etc/3xuisslcert.conf

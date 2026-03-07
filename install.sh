@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.0.2"
+VERSION="1.0.3"
 
 BASE_DIR="/opt/3xuisslcert"
 CONF_FILE="/etc/3xuisslcert.conf"
@@ -25,7 +25,7 @@ AUTO="no"
 usage() {
   cat <<'USG'
 3xuisslcert installer
-Version: 1.0.2
+Version: 1.0.3
 
 Project path:
   /opt/3xuisslcert
@@ -33,12 +33,12 @@ Project path:
 Examples:
   sudo bash install.sh
   sudo bash install.sh --auto
-  sudo bash install.sh --id 89.44.76.8 --san s02.example.com
+  sudo bash install.sh --id <ip-or-domain> --san <dns-name>
 
 Options:
   --auto
-  --id <ip-or-domain>              Optional. If omitted, installer auto-detects public IP.
-  --san <ip-or-domain>             Repeatable.
+  --id <ip-or-domain>
+  --san <ip-or-domain>
   --challenge standalone|webroot
   --webroot <path>
   --service <name>
@@ -59,14 +59,12 @@ detect_public_ip() {
   local ip=""
   if command -v curl >/dev/null 2>&1; then
     for u in "https://api.ipify.org" "https://ifconfig.me" "https://icanhazip.com"; do
-      ip="$(curl -fsS --max-time 5 "$u" 2>/dev/null | tr -d ' 
-	' || true)"
+      ip="$(curl -fsS --max-time 5 "$u" 2>/dev/null | tr -d ' \n\r\t' || true)"
       [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && { echo "$ip"; return 0; }
     done
   fi
   if command -v wget >/dev/null 2>&1; then
-    ip="$(wget -qO- --timeout=5 https://api.ipify.org 2>/dev/null | tr -d ' 
-	' || true)"
+    ip="$(wget -qO- --timeout=5 https://api.ipify.org 2>/dev/null | tr -d ' \n\r\t' || true)"
     [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && { echo "$ip"; return 0; }
   fi
   if command -v ip >/dev/null 2>&1; then
@@ -165,7 +163,7 @@ else
   CRON_EXPR="12 4,16 * * *"
 fi
 
-cat >/etc/cron.d/3xuisslcert <<EOF
+cat >"/etc/cron.d/3xuisslcert" <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 $CRON_EXPR root $BASE_DIR/xui-certctl sync >/dev/null 2>&1

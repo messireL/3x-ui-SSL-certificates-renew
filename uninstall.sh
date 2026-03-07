@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.0.2"
+VERSION="1.0.3"
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   echo "ERROR: run as root (use sudo)."

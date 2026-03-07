@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.0.2"
+VERSION="1.0.3"
 
 BASE_DIR="${BASE_DIR:-/opt/3xuisslcert}"
 CONF_FILE="${CONF_FILE:-/etc/3xuisslcert.conf}"
@@ -17,10 +17,9 @@ SERVICE="${SERVICE:-x-ui}"
 CHALLENGE="${CHALLENGE:-standalone}"     # standalone | webroot
 WEBROOT="${WEBROOT:-/var/www/html}"
 
-# UFW temporary 80/tcp handling
-UFW_TEMP_80="${UFW_TEMP_80:-auto}"                    # auto|yes|no
-UFW_OPEN80_ONLY_WHEN_DUE="${UFW_OPEN80_ONLY_WHEN_DUE:-yes}"  # yes|no
-UFW_OPEN80_WINDOW_SEC="${UFW_OPEN80_WINDOW_SEC:-900}"        # default 15 min
+UFW_TEMP_80="${UFW_TEMP_80:-auto}"
+UFW_OPEN80_ONLY_WHEN_DUE="${UFW_OPEN80_ONLY_WHEN_DUE:-yes}"
+UFW_OPEN80_WINDOW_SEC="${UFW_OPEN80_WINDOW_SEC:-900}"
 UFW_COMMENT="${UFW_COMMENT:-3xuisslcert-acme-temp}"
 
 RELOAD_CMD="${RELOAD_CMD:-$BASE_DIR/xui-certctl postdeploy}"
@@ -34,7 +33,7 @@ log() {
 usage() {
   cat <<'USG'
 3xuisslcert / xui-certctl
-Version: 1.0.2
+Version: 1.0.3
 
 Commands:
   xui-certctl sync [--id X] [--san Y ...] [--challenge standalone|webroot] [--webroot PATH]
@@ -43,14 +42,13 @@ Commands:
   xui-certctl postdeploy
   xui-certctl status
   xui-certctl version
-  xui-certctl help
 USG
 }
 
 cleanup() {
   if [[ "${_ufw_opened}" -eq 1 ]] && command -v ufw >/dev/null 2>&1; then
     local nums
-    nums="$(ufw status numbered 2>/dev/null | sed -n "s/^\[\s*\([0-9]\+\)\].*${UFW_COMMENT}.*$/\1/p" | sort -rn || true)"
+    nums="$(ufw status numbered 2>/dev/null | sed -n "s/^\\[\\s*\\([0-9]\\+\\)\\].*${UFW_COMMENT}.*$/\\1/p" | sort -rn || true)"
     if [[ -n "$nums" ]]; then
       local n
       for n in $nums; do
@@ -66,14 +64,12 @@ detect_public_ip() {
   local ip=""
   if command -v curl >/dev/null 2>&1; then
     for u in "https://api.ipify.org" "https://ifconfig.me" "https://icanhazip.com"; do
-      ip="$(curl -fsS --max-time 5 "$u" 2>/dev/null | tr -d ' 
-	' || true)"
+      ip="$(curl -fsS --max-time 5 "$u" 2>/dev/null | tr -d ' \n\r\t' || true)"
       [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && { echo "$ip"; return 0; }
     done
   fi
   if command -v wget >/dev/null 2>&1; then
-    ip="$(wget -qO- --timeout=5 https://api.ipify.org 2>/dev/null | tr -d ' 
-	' || true)"
+    ip="$(wget -qO- --timeout=5 https://api.ipify.org 2>/dev/null | tr -d ' \n\r\t' || true)"
     [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && { echo "$ip"; return 0; }
   fi
   if command -v ip >/dev/null 2>&1; then
@@ -84,7 +80,6 @@ detect_public_ip() {
 }
 
 if [[ -f "$CONF_FILE" ]]; then
-  # shellcheck disable=SC1090
   source "$CONF_FILE"
 fi
 
@@ -320,7 +315,10 @@ install_cert() {
   ensure_prereq
   prepare_dir "$(canon_dir)"
   log "Installing to canonical: $(canon_cert) and $(canon_key)"
-  acme --install-cert -d "$MAIN_ID" --ecc     --fullchain-file "$(canon_cert)"     --key-file       "$(canon_key)"     --reloadcmd      "$RELOAD_CMD"
+  acme --install-cert -d "$MAIN_ID" --ecc \
+    --fullchain-file "$(canon_cert)" \
+    --key-file       "$(canon_key)" \
+    --reloadcmd      "$RELOAD_CMD"
   chmod 600 "$(canon_key)" || true
 }
 
@@ -328,14 +326,26 @@ postdeploy() {
   ensure_prereq
   [[ -s "$(canon_cert)" && -s "$(canon_key)" ]] || { log "ERROR: canonical cert/key missing"; exit 1; }
 
-  local ident d
+  local ident d src_cert src_key dst_cert dst_key
+  src_cert="$(readlink -f "$(canon_cert)" 2>/dev/null || echo "$(canon_cert)")"
+  src_key="$(readlink -f "$(canon_key)" 2>/dev/null || echo "$(canon_key)")"
+
   for ident in $(all_idents); do
     d="$(target_dir_for "$ident")"
     prepare_dir "$d"
-    cp -f "$(canon_cert)" "$d/fullchain.pem"
-    cp -f "$(canon_key)"  "$d/private.key"
-    chmod 644 "$d/fullchain.pem" 2>/dev/null || true
-    chmod 600 "$d/private.key"   2>/dev/null || true
+    dst_cert="$d/fullchain.pem"
+    dst_key="$d/private.key"
+
+    if [[ "$(readlink -f "$dst_cert" 2>/dev/null || echo "$dst_cert")" != "$src_cert" ]]; then
+      cp -f "$(canon_cert)" "$dst_cert"
+    fi
+
+    if [[ "$(readlink -f "$dst_key" 2>/dev/null || echo "$dst_key")" != "$src_key" ]]; then
+      cp -f "$(canon_key)" "$dst_key"
+    fi
+
+    chmod 644 "$dst_cert" 2>/dev/null || true
+    chmod 600 "$dst_key"   2>/dev/null || true
   done
 
   log "Restarting: $SERVICE"
