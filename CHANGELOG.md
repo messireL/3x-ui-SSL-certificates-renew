@@ -6,3 +6,15 @@
 - cron moved to /etc/cron.d/3xuisslcert
 - automatic public IP detection if --id is not specified
 - temporary UFW opening of 80/tcp only near renew window
+- symlink /usr/local/bin/xui-certctl added
+- README expanded with full deployment and update workflow
+
+## v1.0.1
+- port 80 via UFW opens only close to renew time
+- added UFW_OPEN80_ONLY_WHEN_DUE and UFW_OPEN80_WINDOW_SEC
+
+## v1.0.0
+- initial public installer
+- certificate issue / renew / install workflow
+- cron support
+- postdeploy restart for x-ui

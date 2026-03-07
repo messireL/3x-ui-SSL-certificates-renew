@@ -2,6 +2,7 @@
 set -euo pipefail
 
 VERSION="1.0.2"
+
 BASE_DIR="${BASE_DIR:-/opt/3xuisslcert}"
 CONF_FILE="${CONF_FILE:-/etc/3xuisslcert.conf}"
 
@@ -13,22 +14,45 @@ TARGET_BASE_DIR="${TARGET_BASE_DIR:-/root/cert}"
 TARGET_SUBDIR="${TARGET_SUBDIR:-ip}"
 
 SERVICE="${SERVICE:-x-ui}"
-CHALLENGE="${CHALLENGE:-standalone}"
+CHALLENGE="${CHALLENGE:-standalone}"     # standalone | webroot
 WEBROOT="${WEBROOT:-/var/www/html}"
 
-UFW_TEMP_80="${UFW_TEMP_80:-auto}"                     # auto|yes|no
-UFW_OPEN80_ONLY_WHEN_DUE="${UFW_OPEN80_ONLY_WHEN_DUE:-yes}"
-UFW_OPEN80_WINDOW_SEC="${UFW_OPEN80_WINDOW_SEC:-900}"
+# UFW temporary 80/tcp handling
+UFW_TEMP_80="${UFW_TEMP_80:-auto}"                    # auto|yes|no
+UFW_OPEN80_ONLY_WHEN_DUE="${UFW_OPEN80_ONLY_WHEN_DUE:-yes}"  # yes|no
+UFW_OPEN80_WINDOW_SEC="${UFW_OPEN80_WINDOW_SEC:-900}"        # default 15 min
 UFW_COMMENT="${UFW_COMMENT:-3xuisslcert-acme-temp}"
 
 RELOAD_CMD="${RELOAD_CMD:-$BASE_DIR/xui-certctl postdeploy}"
 
 _ufw_opened=0
+
+log() {
+  echo "[$(date -Is)] $*"
+}
+
+usage() {
+  cat <<'USG'
+3xuisslcert / xui-certctl
+Version: 1.0.2
+
+Commands:
+  xui-certctl sync [--id X] [--san Y ...] [--challenge standalone|webroot] [--webroot PATH]
+  xui-certctl issue
+  xui-certctl install
+  xui-certctl postdeploy
+  xui-certctl status
+  xui-certctl version
+  xui-certctl help
+USG
+}
+
 cleanup() {
   if [[ "${_ufw_opened}" -eq 1 ]] && command -v ufw >/dev/null 2>&1; then
-    local nums n
-    nums="$(ufw status numbered 2>/dev/null | sed -n "/$UFW_COMMENT/p" | sed -n 's/^\[\s*\([0-9]\+\)\].*$/\1/p' | sort -rn || true)"
+    local nums
+    nums="$(ufw status numbered 2>/dev/null | sed -n "s/^\[\s*\([0-9]\+\)\].*${UFW_COMMENT}.*$/\1/p" | sort -rn || true)"
     if [[ -n "$nums" ]]; then
+      local n
       for n in $nums; do
         yes | ufw delete "$n" >/dev/null 2>&1 || true
       done
@@ -38,32 +62,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-log() { echo "[$(date -Is)] $*"; }
-
-usage() {
-  cat <<USG
-3xuisslcert / xui-certctl v$VERSION
-
-Commands:
-  xui-certctl sync [--id X] [--san Y ...] [--challenge standalone|webroot] [--webroot PATH]
-  xui-certctl issue
-  xui-certctl install
-  xui-certctl postdeploy
-  xui-certctl status
-  xui-certctl version
-USG
-}
-
 detect_public_ip() {
   local ip=""
   if command -v curl >/dev/null 2>&1; then
     for u in "https://api.ipify.org" "https://ifconfig.me" "https://icanhazip.com"; do
-      ip="$(curl -fsS --max-time 5 "$u" 2>/dev/null | tr -d ' \n\r\t' || true)"
+      ip="$(curl -fsS --max-time 5 "$u" 2>/dev/null | tr -d ' 
+	' || true)"
       [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && { echo "$ip"; return 0; }
     done
   fi
   if command -v wget >/dev/null 2>&1; then
-    ip="$(wget -qO- --timeout=5 https://api.ipify.org 2>/dev/null | tr -d ' \n\r\t' || true)"
+    ip="$(wget -qO- --timeout=5 https://api.ipify.org 2>/dev/null | tr -d ' 
+	' || true)"
     [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && { echo "$ip"; return 0; }
   fi
   if command -v ip >/dev/null 2>&1; then
@@ -87,16 +97,26 @@ while [[ $# -gt 0 ]]; do
     --san) SAN_IDS="${SAN_IDS} ${2:-}"; shift 2 ;;
     --challenge) CHALLENGE="${2:-}"; shift 2 ;;
     --webroot) WEBROOT="${2:-}"; shift 2 ;;
-    -h|--help) CMD="help"; shift ;;
+    -h|--help) CMD="help"; shift 1 ;;
     *) break ;;
   esac
 done
 
 SAN_IDS="$(echo "$SAN_IDS" | xargs 2>/dev/null || true)"
-[[ -n "$MAIN_ID" ]] || MAIN_ID="$(detect_public_ip)"
 
-if [[ "$CMD" == "help" || "$CMD" == "-h" || "$CMD" == "--help" ]]; then usage; exit 0; fi
-if [[ "$CMD" == "version" ]]; then echo "$VERSION"; exit 0; fi
+if [[ -z "$MAIN_ID" ]]; then
+  MAIN_ID="$(detect_public_ip)"
+fi
+
+if [[ "$CMD" == "help" || "$CMD" == "-h" || "$CMD" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ "$CMD" == "version" ]]; then
+  echo "$VERSION"
+  exit 0
+fi
 
 ensure_prereq() {
   [[ -n "$MAIN_ID" ]] || { echo "ERROR: MAIN_ID empty and public IP autodetect failed"; exit 1; }
@@ -104,12 +124,17 @@ ensure_prereq() {
   command -v openssl >/dev/null 2>&1 || { echo "ERROR: openssl required"; exit 1; }
 }
 
-acme() { "$ACME_HOME/acme.sh" --home "$ACME_HOME" "$@"; }
-is_ipv4() { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; }
+acme() {
+  "$ACME_HOME/acme.sh" --home "$ACME_HOME" "$@"
+}
+
+is_ipv4() {
+  [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+}
 
 has_any_ip() {
-  local v
   is_ipv4 "$MAIN_ID" && return 0
+  local v
   for v in $SAN_IDS; do
     is_ipv4 "$v" && return 0
   done
@@ -128,10 +153,13 @@ profile_flag() {
   fi
 }
 
-target_dir_for() { echo "$TARGET_BASE_DIR/$TARGET_SUBDIR/$1"; }
-canon_dir() { target_dir_for "$MAIN_ID"; }
+target_dir_for() {
+  echo "$TARGET_BASE_DIR/$TARGET_SUBDIR/$1"
+}
+
+canon_dir()  { target_dir_for "$MAIN_ID"; }
 canon_cert() { echo "$(canon_dir)/fullchain.pem"; }
-canon_key() { echo "$(canon_dir)/private.key"; }
+canon_key()  { echo "$(canon_dir)/private.key"; }
 acme_domain_dir() { echo "$ACME_HOME/${MAIN_ID}_ecc"; }
 
 domain_conf_file() {
@@ -191,7 +219,7 @@ should_open_80_now() {
     return 0
   fi
   now="$(date +%s)"
-  win="$UFW_OPEN80_WINDOW_SEC"
+  win="${UFW_OPEN80_WINDOW_SEC}"
   if (( now >= nxt - win )); then
     echo "yes"
   else
@@ -200,7 +228,7 @@ should_open_80_now() {
 }
 
 maybe_open_80() {
-  local want="$UFW_TEMP_80" decision
+  local want="$UFW_TEMP_80"
   if [[ "$want" == "auto" ]]; then
     if [[ "$CHALLENGE" == "standalone" ]] && ufw_active; then
       want="yes"
@@ -213,6 +241,7 @@ maybe_open_80() {
   [[ "$CHALLENGE" == "standalone" ]] || return 0
 
   if [[ "$UFW_OPEN80_ONLY_WHEN_DUE" == "yes" ]]; then
+    local decision
     decision="$(should_open_80_now)"
     if [[ "$decision" == "no" ]]; then
       log "UFW: skip opening 80/tcp (next renew at $(next_renew_str), window=${UFW_OPEN80_WINDOW_SEC}s)"
@@ -255,7 +284,7 @@ issue_cert() {
     if [[ -n "$pf" ]]; then
       args+=("$pf" "shortlived")
     else
-      log "WARN: no profile flag detected; issuing without explicit shortlived"
+      log "WARN: no profile flag detected; issuing without explicit shortlived profile"
     fi
   fi
 
@@ -270,7 +299,9 @@ issue_cert() {
 
   args+=(-d "$MAIN_ID")
   local s
-  for s in $SAN_IDS; do args+=(-d "$s"); done
+  for s in $SAN_IDS; do
+    args+=(-d "$s")
+  done
 
   log "Issuing: MAIN_ID=$MAIN_ID SAN_IDS='$SAN_IDS' CHALLENGE=$CHALLENGE"
   acme "${args[@]}"
@@ -289,16 +320,14 @@ install_cert() {
   ensure_prereq
   prepare_dir "$(canon_dir)"
   log "Installing to canonical: $(canon_cert) and $(canon_key)"
-  acme --install-cert -d "$MAIN_ID" --ecc \
-    --fullchain-file "$(canon_cert)" \
-    --key-file       "$(canon_key)" \
-    --reloadcmd      "$RELOAD_CMD"
+  acme --install-cert -d "$MAIN_ID" --ecc     --fullchain-file "$(canon_cert)"     --key-file       "$(canon_key)"     --reloadcmd      "$RELOAD_CMD"
   chmod 600 "$(canon_key)" || true
 }
 
 postdeploy() {
   ensure_prereq
   [[ -s "$(canon_cert)" && -s "$(canon_key)" ]] || { log "ERROR: canonical cert/key missing"; exit 1; }
+
   local ident d
   for ident in $(all_idents); do
     d="$(target_dir_for "$ident")"
@@ -308,6 +337,7 @@ postdeploy() {
     chmod 644 "$d/fullchain.pem" 2>/dev/null || true
     chmod 600 "$d/private.key"   2>/dev/null || true
   done
+
   log "Restarting: $SERVICE"
   restart_service
 }
@@ -333,6 +363,7 @@ status() {
 
 sync() {
   ensure_prereq
+
   if ! is_listed_main; then
     log "Not found in acme list -> issue"
     issue_cert
@@ -343,6 +374,7 @@ sync() {
   maybe_open_80
   log "acme --cron..."
   acme --cron >/dev/null 2>&1 || true
+
   if needs_install; then
     log "Renewed -> install"
     install_cert

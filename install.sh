@@ -2,6 +2,7 @@
 set -euo pipefail
 
 VERSION="1.0.2"
+
 BASE_DIR="/opt/3xuisslcert"
 CONF_FILE="/etc/3xuisslcert.conf"
 BIN_LINK="/usr/local/bin/xui-certctl"
@@ -22,10 +23,11 @@ RUN_SYNC="yes"
 AUTO="no"
 
 usage() {
-  cat <<USG
-3xuisslcert installer v$VERSION
+  cat <<'USG'
+3xuisslcert installer
+Version: 1.0.2
 
-Target project path:
+Project path:
   /opt/3xuisslcert
 
 Examples:
@@ -57,12 +59,14 @@ detect_public_ip() {
   local ip=""
   if command -v curl >/dev/null 2>&1; then
     for u in "https://api.ipify.org" "https://ifconfig.me" "https://icanhazip.com"; do
-      ip="$(curl -fsS --max-time 5 "$u" 2>/dev/null | tr -d ' \n\r\t' || true)"
+      ip="$(curl -fsS --max-time 5 "$u" 2>/dev/null | tr -d ' 
+	' || true)"
       [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && { echo "$ip"; return 0; }
     done
   fi
   if command -v wget >/dev/null 2>&1; then
-    ip="$(wget -qO- --timeout=5 https://api.ipify.org 2>/dev/null | tr -d ' \n\r\t' || true)"
+    ip="$(wget -qO- --timeout=5 https://api.ipify.org 2>/dev/null | tr -d ' 
+	' || true)"
     [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && { echo "$ip"; return 0; }
   fi
   if command -v ip >/dev/null 2>&1; then
@@ -79,7 +83,8 @@ detect_fqdn() {
 }
 
 prompt_default() {
-  local __var="$1" __prompt="$2" __def="$3" __val=""
+  local __var="$1" __prompt="$2" __def="$3"
+  local __val=""
   read -r -p "$__prompt [$__def]: " __val || true
   [[ -z "$__val" ]] && __val="$__def"
   printf -v "$__var" '%s' "$__val"
@@ -87,7 +92,7 @@ prompt_default() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --auto) AUTO="yes"; shift ;;
+    --auto) AUTO="yes"; shift 1 ;;
     --id) MAIN_ID="${2:-}"; shift 2 ;;
     --san) SAN_IDS="${SAN_IDS} ${2:-}"; shift 2 ;;
     --challenge) CHALLENGE="${2:-}"; shift 2 ;;
@@ -98,7 +103,7 @@ while [[ $# -gt 0 ]]; do
     --ufw-temp80) UFW_TEMP_80="${2:-}"; shift 2 ;;
     --ufw-window-sec) UFW_OPEN80_WINDOW_SEC="${2:-}"; shift 2 ;;
     --ufw-open80-only-when-due) UFW_OPEN80_ONLY_WHEN_DUE="${2:-}"; shift 2 ;;
-    --no-sync) RUN_SYNC="no"; shift ;;
+    --no-sync) RUN_SYNC="no"; shift 1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown: $1"; usage; exit 1 ;;
   esac
@@ -114,11 +119,16 @@ if [[ "$AUTO" == "yes" ]]; then
   [[ -z "$MAIN_ID" ]] && prompt_default MAIN_ID "MAIN_ID" "${det_ip:-}"
   if [[ -n "$det_fqdn" && "$det_fqdn" != "$MAIN_ID" ]]; then
     read -r -p "Add hostname to SAN? ($det_fqdn) [y/N]: " a || true
-    case "${a,,}" in y|yes) SAN_IDS="${SAN_IDS} $det_fqdn" ;; esac
+    case "${a,,}" in
+      y|yes) SAN_IDS="${SAN_IDS} $det_fqdn" ;;
+    esac
   fi
 fi
 
-[[ -n "$MAIN_ID" ]] || MAIN_ID="$det_ip"
+if [[ -z "$MAIN_ID" ]]; then
+  MAIN_ID="$det_ip"
+fi
+
 SAN_IDS="$(echo "$SAN_IDS" | xargs 2>/dev/null || true)"
 [[ -n "$MAIN_ID" ]] || { echo "ERROR: MAIN_ID empty and public IP autodetect failed"; exit 1; }
 
@@ -127,7 +137,7 @@ mkdir -p "$BASE_DIR"
 install -m 0755 "$PKG_DIR/files/xui-certctl" "$BASE_DIR/xui-certctl"
 ln -sfn "$BASE_DIR/xui-certctl" "$BIN_LINK"
 
-cat > "$CONF_FILE" <<CFG
+cat >"$CONF_FILE" <<EOF
 VERSION="$VERSION"
 BASE_DIR="$BASE_DIR"
 MAIN_ID="$MAIN_ID"
@@ -143,7 +153,7 @@ UFW_OPEN80_ONLY_WHEN_DUE="$UFW_OPEN80_ONLY_WHEN_DUE"
 UFW_OPEN80_WINDOW_SEC="$UFW_OPEN80_WINDOW_SEC"
 UFW_COMMENT="3xuisslcert-acme-temp"
 RELOAD_CMD="$BASE_DIR/xui-certctl postdeploy"
-CFG
+EOF
 chmod 0644 "$CONF_FILE"
 
 mkdir -p "$TARGET_BASE_DIR/$TARGET_SUBDIR"
@@ -155,11 +165,11 @@ else
   CRON_EXPR="12 4,16 * * *"
 fi
 
-cat > /etc/cron.d/3xuisslcert <<CRON
+cat >/etc/cron.d/3xuisslcert <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 $CRON_EXPR root $BASE_DIR/xui-certctl sync >/dev/null 2>&1
-CRON
+EOF
 chmod 0644 /etc/cron.d/3xuisslcert
 rm -f /etc/cron.d/xui-certctl
 

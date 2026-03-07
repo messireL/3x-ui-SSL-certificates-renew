@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+VERSION="1.0.2"
+
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-  echo "ERROR: run as root"
+  echo "ERROR: run as root (use sudo)."
   exit 1
 fi
 
@@ -12,4 +14,4 @@ rm -f /usr/local/bin/xui-certctl
 rm -f /etc/3xuisslcert.conf
 rm -rf /opt/3xuisslcert
 
-echo "Removed 3xuisslcert"
+echo "Removed 3xuisslcert v$VERSION"

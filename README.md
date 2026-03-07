@@ -1,32 +1,313 @@
-# 3xuisslcert v1.0.2
+# 3x-ui SSL certificates renew
 
-## Что делает
-- ставит проект в `/opt/3xuisslcert`
-- создаёт конфиг `/etc/3xuisslcert.conf`
-- создаёт cron `/etc/cron.d/3xuisslcert`
-- если `--id` не указан, автоматически определяет публичный IP
-- создаёт ссылку `/usr/local/bin/xui-certctl -> /opt/3xuisslcert/xui-certctl`
+Автоматическое получение, установка и продление SSL-сертификатов для **3x-ui / x-ui** с поддержкой:
 
-## Установка
+- автоматического определения публичного IP, если `--id` не указан
+- выпуска сертификата для **IP** и/или **домена** (SAN)
+- автоматического продления через **cron**
+- установки сертификатов в:
+  - `/root/cert/ip/<ID>/fullchain.pem`
+  - `/root/cert/ip/<ID>/private.key`
+- временного открытия `80/tcp` через **UFW** только на время выпуска/обновления
+- автоматического перезапуска сервиса **x-ui** после обновления сертификата
+
+---
+
+## Что устанавливается
+
+Проект устанавливается в постоянную папку:
+
 ```bash
-tar -xzf 3xuisslcert-v1.0.2.tar.gz
-cd 3xuisslcert-v1.0.2
+/opt/3xuisslcert
+```
+
+Создаются файлы:
+
+```bash
+/opt/3xuisslcert/xui-certctl
+/etc/3xuisslcert.conf
+/etc/cron.d/3xuisslcert
+/usr/local/bin/xui-certctl
+```
+
+Сертификаты сохраняются в:
+
+```bash
+/root/cert/ip/<ID>/fullchain.pem
+/root/cert/ip/<ID>/private.key
+```
+
+---
+
+## Требования
+
+На сервере должны быть доступны:
+
+- `bash`
+- `openssl`
+- `cron`
+- `curl` или `wget`
+- `acme.sh` в каталоге `/root/.acme.sh`
+- `x-ui` или `3x-ui`
+- `ufw` — опционально, если используется firewall через UFW
+
+---
+
+## Развёртывание на сервере
+
+### Вариант 1. Установка из GitHub (рекомендуется)
+
+Клонируем репозиторий на сервер в отдельную папку с исходниками:
+
+```bash
+sudo git clone https://github.com/messireL/3x-ui-SSL-certificates-renew.git /opt/3xuisslcert-repo
+cd /opt/3xuisslcert-repo
 sudo bash install.sh
 ```
 
-Авто + предложение hostname в SAN:
+После этого рабочий проект будет установлен в:
+
+```bash
+/opt/3xuisslcert
+```
+
+### Вариант 2. Обновление проекта на сервере
+
+Если репозиторий уже клонирован на сервер:
+
+```bash
+cd /opt/3xuisslcert-repo
+sudo git pull
+sudo bash install.sh
+```
+
+---
+
+## Установка
+
+### 1. Самый простой вариант
+
+Если нужно выпустить сертификат для публичного IP сервера, а IP определится автоматически:
+
+```bash
+sudo bash install.sh
+```
+
+### 2. Автоопределение IP + предложение hostname в SAN
+
 ```bash
 sudo bash install.sh --auto
 ```
 
-Явно:
+### 3. Явно указать IP и домен
+
 ```bash
 sudo bash install.sh --id 89.44.76.8 --san s02.shaten.su
 ```
 
-## Проверка
+### 4. Только домен
+
+```bash
+sudo bash install.sh --id s02.shaten.su
+```
+
+### 5. Если 80 порт занят и используется webroot
+
+```bash
+sudo bash install.sh --id s02.shaten.su --challenge webroot --webroot /var/www/html
+```
+
+---
+
+## Что делает install.sh
+
+Скрипт установки:
+
+1. определяет публичный IP, если `--id` не указан
+2. ставит проект в `/opt/3xuisslcert`
+3. создаёт конфиг `/etc/3xuisslcert.conf`
+4. создаёт cron-задачу `/etc/cron.d/3xuisslcert`
+5. создаёт ссылку:
+   ```bash
+   /usr/local/bin/xui-certctl -> /opt/3xuisslcert/xui-certctl
+   ```
+6. при первом запуске вызывает:
+   ```bash
+   xui-certctl sync
+   ```
+
+---
+
+## Cron
+
+Файл cron создаётся автоматически:
+
+```bash
+/etc/cron.d/3xuisslcert
+```
+
+Расписание зависит от типа сертификата:
+
+- если используется **IP** → запуск каждые 6 часов
+- если используются только домены → 2 раза в сутки
+
+Проверка:
+
+```bash
+cat /etc/cron.d/3xuisslcert
+```
+
+---
+
+## UFW и порт 80
+
+Если используется `standalone`, проект умеет:
+
+- **не держать 80/tcp открытым постоянно**
+- временно открывать `80/tcp` только во время выпуска/renew
+- после завершения удалять временное правило
+
+Если у вас уже есть постоянное правило UFW на `80/tcp`, его лучше убрать, чтобы порт не был открыт всегда.
+
+Проверка UFW:
+
+```bash
+sudo ufw status numbered
+```
+
+---
+
+## Проверка после установки
+
+### Проверка версии
+
 ```bash
 xui-certctl version
+```
+
+### Проверка состояния
+
+```bash
 xui-certctl status
+```
+
+### Проверка сертификата
+
+```bash
+openssl x509 -in /root/cert/ip/<ID>/fullchain.pem -noout -enddate -subject
+```
+
+Пример:
+
+```bash
+openssl x509 -in /root/cert/ip/89.44.76.8/fullchain.pem -noout -enddate -subject
+```
+
+### Проверка cron
+
+```bash
 cat /etc/cron.d/3xuisslcert
+```
+
+### Проверка сервиса x-ui
+
+```bash
+sudo systemctl status x-ui --no-pager
+```
+
+---
+
+## Ручные команды
+
+### Запустить синхронизацию вручную
+
+```bash
+sudo xui-certctl sync
+```
+
+### Принудительно выполнить postdeploy
+
+```bash
+sudo /opt/3xuisslcert/xui-certctl postdeploy
+```
+
+### Переустановить сертификат через acme.sh и перепривязать reloadcmd
+
+```bash
+sudo /root/.acme.sh/acme.sh --install-cert -d <ID> --ecc   --fullchain-file /root/cert/ip/<ID>/fullchain.pem   --key-file       /root/cert/ip/<ID>/private.key   --reloadcmd      "/opt/3xuisslcert/xui-certctl postdeploy"
+```
+
+---
+
+## Обновление проекта
+
+### На локальном ПК
+
+1. Обновляешь файлы проекта в локальном клоне
+2. Коммитишь изменения через **GitHub Desktop**
+3. Пушишь в GitHub
+
+### На сервере
+
+```bash
+cd /opt/3xuisslcert-repo
+sudo git pull
+sudo bash install.sh
+```
+
+---
+
+## Удаление
+
+```bash
+sudo bash uninstall.sh
+```
+
+Это удалит:
+
+```bash
+/etc/cron.d/3xuisslcert
+/etc/3xuisslcert.conf
+/usr/local/bin/xui-certctl
+/opt/3xuisslcert
+```
+
+---
+
+## Рекомендуемый порядок работы
+
+### На локальном ПК
+1. Открываешь репозиторий в GitHub Desktop
+2. Меняешь файлы
+3. Commit
+4. Push
+
+### На сервере
+1. Переходишь в папку репозитория:
+   ```bash
+   cd /opt/3xuisslcert-repo
+   ```
+2. Забираешь изменения:
+   ```bash
+   sudo git pull
+   ```
+3. Переустанавливаешь проект:
+   ```bash
+   sudo bash install.sh
+   ```
+4. Проверяешь:
+   ```bash
+   xui-certctl version
+   xui-certctl status
+   cat /etc/cron.d/3xuisslcert
+   ```
+
+---
+
+## Примечание
+
+Если после обновления сертификата панель **3x-ui / x-ui** не перезапускается автоматически, нужно перепривязать `reloadcmd`:
+
+```bash
+sudo /root/.acme.sh/acme.sh --install-cert -d <ID> --ecc   --fullchain-file /root/cert/ip/<ID>/fullchain.pem   --key-file       /root/cert/ip/<ID>/private.key   --reloadcmd      "/opt/3xuisslcert/xui-certctl postdeploy"
 ```
