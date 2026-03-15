@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v1.0.5
+- documentation release
+- README expanded with explicit install / update / uninstall / verification sections
+- added dedicated docs for install, uninstall, checks and migration behavior
+- transfer document updated for moving project into a new chat
+
 ## v1.0.4
 - migration release: no manual uninstall required
 - added compatibility symlink `/usr/local/sbin/xui-certctl -> /opt/3xuisslcert/xui-certctl`

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.0.4"
+VERSION="1.0.5"
 
 BASE_DIR="${BASE_DIR:-/opt/3xuisslcert}"
 CONF_FILE="${CONF_FILE:-/etc/3xuisslcert.conf}"
@@ -33,7 +33,7 @@ log() {
 usage() {
   cat <<'USG'
 3xuisslcert / xui-certctl
-Version: 1.0.4
+Version: 1.0.5
 
 Commands:
   xui-certctl sync [--id X] [--san Y ...] [--challenge standalone|webroot] [--webroot PATH]

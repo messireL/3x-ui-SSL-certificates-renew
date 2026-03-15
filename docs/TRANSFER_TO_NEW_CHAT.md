@@ -2,7 +2,7 @@
 
 Проект: 3x-ui SSL certificates renew  
 Репозиторий: https://github.com/messireL/3x-ui-SSL-certificates-renew  
-Текущая версия: v1.0.4
+Текущая версия: v1.0.5
 
 ## Назначение
 Автоматическое получение, установка и продление SSL-сертификатов для 3x-ui / x-ui.
@@ -22,7 +22,7 @@
 - `/root/cert/ip/<ID>/private.key`
 
 ## Что важно помнить
-- `install.sh` теперь миграционный: ручной деинсталл старой версии обычно не нужен.
+- `install.sh` миграционный: ручной деинсталл старой версии обычно не нужен.
 - Начиная с v1.0.4, установщик:
   - удаляет старый cron `/etc/cron.d/xui-certctl`
   - создаёт совместимый линк `/usr/local/sbin/xui-certctl`
@@ -49,6 +49,7 @@
 - `xui-certctl version`
 - `xui-certctl status`
 - `cat /etc/cron.d/3xuisslcert`
+- `ls -l /usr/local/bin/xui-certctl /usr/local/sbin/xui-certctl`
 - `grep -E 'Le_ReloadCmd|Le_RealFullChainPath|Le_RealKeyPath' /root/.acme.sh/<ID>_ecc/<ID>.conf`
 
 ## Если сертификат обновился, но не применился

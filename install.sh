@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.0.4"
+VERSION="1.0.5"
 
 BASE_DIR="/opt/3xuisslcert"
 CONF_FILE="/etc/3xuisslcert.conf"
@@ -26,7 +26,7 @@ AUTO="no"
 usage() {
   cat <<'USG'
 3xuisslcert installer
-Version: 1.0.4
+Version: 1.0.5
 
 Project path:
   /opt/3xuisslcert
@@ -113,19 +113,15 @@ load_existing_config() {
 }
 
 rebind_current_cert() {
-  local install_cmd
   [[ -n "${MAIN_ID:-}" ]] || return 0
   [[ -x "$ACME_HOME/acme.sh" ]] || return 0
 
   if "$ACME_HOME/acme.sh" --home "$ACME_HOME" --list 2>/dev/null | awk 'NR>1{print $1}' | grep -qx "$MAIN_ID"; then
     echo "Rebinding acme install paths and reloadcmd for current MAIN_ID=$MAIN_ID ..."
-    install_cmd=(
-      "$ACME_HOME/acme.sh" --home "$ACME_HOME" --install-cert -d "$MAIN_ID" --ecc
-      --fullchain-file "$TARGET_BASE_DIR/$TARGET_SUBDIR/$MAIN_ID/fullchain.pem"
-      --key-file       "$TARGET_BASE_DIR/$TARGET_SUBDIR/$MAIN_ID/private.key"
-      --reloadcmd      "$BASE_DIR/xui-certctl postdeploy"
-    )
-    "${install_cmd[@]}" || true
+    "$ACME_HOME/acme.sh" --home "$ACME_HOME" --install-cert -d "$MAIN_ID" --ecc \
+      --fullchain-file "$TARGET_BASE_DIR/$TARGET_SUBDIR/$MAIN_ID/fullchain.pem" \
+      --key-file       "$TARGET_BASE_DIR/$TARGET_SUBDIR/$MAIN_ID/private.key" \
+      --reloadcmd      "$BASE_DIR/xui-certctl postdeploy" || true
   fi
 }
 

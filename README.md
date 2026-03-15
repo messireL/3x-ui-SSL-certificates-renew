@@ -1,22 +1,27 @@
 # 3x-ui SSL certificates renew
 
-Автоматическое получение, установка и продление SSL-сертификатов для **3x-ui / x-ui** с поддержкой:
+Автоматическое получение, установка и продление SSL-сертификатов для **3x-ui / x-ui**.
 
-- автоматического определения публичного IP, если `--id` не указан
-- выпуска сертификата для **IP** и/или **домена** (SAN)
-- автоматического продления через **cron**
-- установки сертификатов в:
+## Что умеет проект
+
+- автоматически определяет публичный IP, если `--id` не указан
+- выпускает сертификат для **IP** и/или **домена** (SAN)
+- автоматически продлевает сертификат через **cron**
+- сохраняет сертификаты в:
   - `/root/cert/ip/<ID>/fullchain.pem`
   - `/root/cert/ip/<ID>/private.key`
-- временного открытия `80/tcp` через **UFW** только на время выпуска/обновления
-- автоматического перезапуска сервиса **x-ui** после обновления сертификата
-- миграции со старых установок (`/usr/local/sbin/xui-certctl`, `/etc/xui-certctl.conf`, `/etc/cron.d/xui-certctl`)
+- временно открывает `80/tcp` через **UFW** только на время выпуска/обновления
+- автоматически перезапускает сервис **x-ui** после обновления сертификата
+- мигрирует старые установки:
+  - `/usr/local/sbin/xui-certctl`
+  - `/etc/xui-certctl.conf`
+  - `/etc/cron.d/xui-certctl`
 
 ---
 
 ## Что устанавливается
 
-Проект устанавливается в постоянную папку:
+Рабочая папка проекта:
 
 ```bash
 /opt/3xuisslcert
@@ -41,50 +46,17 @@
 
 ---
 
-## Важное изменение в v1.0.4
+## Требования
 
-Полный деинсталл работающего сервиса **не нужен**.
+На сервере должны быть доступны:
 
-Новый `install.sh` сам:
-
-- ставит актуальную версию в `/opt/3xuisslcert`
-- создаёт совместимый линк:
-  - `/usr/local/sbin/xui-certctl -> /opt/3xuisslcert/xui-certctl`
-- удаляет старый cron:
-  - `/etc/cron.d/xui-certctl`
-- создаёт новый cron:
-  - `/etc/cron.d/3xuisslcert`
-- заново перепривязывает текущий сертификат через `acme.sh --install-cert`, чтобы обновить `reloadcmd`
-
-То есть это **миграционный релиз**.
-
----
-
-## Развёртывание на сервере
-
-### Вариант 1. Установка из GitHub (рекомендуется)
-
-```bash
-sudo git clone https://github.com/messireL/3x-ui-SSL-certificates-renew.git /opt/3xuisslcert-repo
-cd /opt/3xuisslcert-repo
-sudo bash install.sh
-```
-
-После этого рабочий проект будет установлен в:
-
-```bash
-/opt/3xuisslcert
-```
-
-### Вариант 2. Обновление проекта на сервере
-
-Если репозиторий уже клонирован на сервер:
-
-```bash
-cd /opt/3xuisslcert-repo
-sudo git pull
-sudo bash install.sh
-```
+- `bash`
+- `openssl`
+- `cron`
+- `curl` или `wget`
+- `acme.sh` в каталоге `/root/.acme.sh`
+- `x-ui` или `3x-ui`
+- `ufw` — опционально, если используется firewall через UFW
 
 ---
 
@@ -124,6 +96,51 @@ sudo bash install.sh --id <dns-name> --challenge webroot --webroot /var/www/html
 
 ---
 
+## Обновление / миграция
+
+### Важно
+Начиная с `v1.0.4`, а также в текущей `v1.0.5`, **ручной деинсталл перед обновлением обычно не нужен**.
+
+Установщик сам:
+
+- ставит актуальную версию в `/opt/3xuisslcert`
+- создаёт совместимые ссылки:
+  - `/usr/local/bin/xui-certctl`
+  - `/usr/local/sbin/xui-certctl`
+- удаляет старый cron:
+  - `/etc/cron.d/xui-certctl`
+- создаёт новый cron:
+  - `/etc/cron.d/3xuisslcert`
+- перепривязывает текущий сертификат через `acme.sh --install-cert`, чтобы обновить `reloadcmd`
+
+### Обновление на сервере
+
+Если репозиторий уже клонирован на сервер:
+
+```bash
+cd /opt/3xuisslcert-repo
+sudo git pull
+sudo bash install.sh
+```
+
+---
+
+## Развёртывание на сервере из GitHub
+
+```bash
+sudo git clone https://github.com/messireL/3x-ui-SSL-certificates-renew.git /opt/3xuisslcert-repo
+cd /opt/3xuisslcert-repo
+sudo bash install.sh
+```
+
+После этого рабочий проект будет установлен в:
+
+```bash
+/opt/3xuisslcert
+```
+
+---
+
 ## Что делает install.sh
 
 Скрипт установки:
@@ -145,6 +162,79 @@ sudo bash install.sh --id <dns-name> --challenge webroot --webroot /var/www/html
 
 ---
 
+## Деинсталл
+
+Полный деинсталл нужен только если вы действительно хотите убрать проект с сервера.
+
+```bash
+sudo bash uninstall.sh
+```
+
+Что удаляется:
+
+```bash
+/etc/cron.d/3xuisslcert
+/etc/cron.d/xui-certctl
+/etc/3xuisslcert.conf
+/usr/local/bin/xui-certctl
+/usr/local/sbin/xui-certctl
+/opt/3xuisslcert
+```
+
+Что **не** удаляется этим скриптом:
+
+- `/root/.acme.sh/...` с уже выпущенными сертификатами
+- `/root/cert/ip/...` с установленными сертификатами
+- `/opt/3xuisslcert-repo` с git-исходниками
+
+---
+
+## Проверка после установки / обновления
+
+### Проверка версии
+
+```bash
+xui-certctl version
+```
+
+### Проверка состояния
+
+```bash
+xui-certctl status
+```
+
+### Проверка cron
+
+```bash
+cat /etc/cron.d/3xuisslcert
+```
+
+### Проверка ссылок
+
+```bash
+ls -l /usr/local/bin/xui-certctl /usr/local/sbin/xui-certctl
+```
+
+### Проверка сертификата
+
+```bash
+openssl x509 -in /root/cert/ip/<ID>/fullchain.pem -noout -enddate -subject
+```
+
+### Проверка сервиса x-ui
+
+```bash
+sudo systemctl status x-ui --no-pager
+```
+
+### Проверка привязки reloadcmd в acme.sh
+
+```bash
+grep -E 'Le_ReloadCmd|Le_RealFullChainPath|Le_RealKeyPath' /root/.acme.sh/<ID>_ecc/<ID>.conf
+```
+
+---
+
 ## Cron
 
 Файл cron создаётся автоматически:
@@ -157,12 +247,6 @@ sudo bash install.sh --id <dns-name> --challenge webroot --webroot /var/www/html
 
 - если используется **IP** → запуск каждые 6 часов
 - если используются только домены → 2 раза в сутки
-
-Проверка:
-
-```bash
-cat /etc/cron.d/3xuisslcert
-```
 
 ---
 
@@ -180,40 +264,6 @@ cat /etc/cron.d/3xuisslcert
 
 ```bash
 sudo ufw status numbered
-```
-
----
-
-## Проверка после установки
-
-### Проверка версии
-
-```bash
-xui-certctl version
-```
-
-### Проверка состояния
-
-```bash
-xui-certctl status
-```
-
-### Проверка сертификата
-
-```bash
-openssl x509 -in /root/cert/ip/<ID>/fullchain.pem -noout -enddate -subject
-```
-
-### Проверка cron
-
-```bash
-cat /etc/cron.d/3xuisslcert
-```
-
-### Проверка сервиса x-ui
-
-```bash
-sudo systemctl status x-ui --no-pager
 ```
 
 ---
@@ -239,45 +289,6 @@ sudo /root/.acme.sh/acme.sh --install-cert -d <ID> --ecc \
   --fullchain-file /root/cert/ip/<ID>/fullchain.pem \
   --key-file       /root/cert/ip/<ID>/private.key \
   --reloadcmd      "/opt/3xuisslcert/xui-certctl postdeploy"
-```
-
----
-
-## Обновление проекта
-
-### На локальном ПК
-
-1. Обновляешь файлы проекта в локальном клоне
-2. Коммитишь изменения через **GitHub Desktop**
-3. Пушишь в GitHub
-
-### На сервере
-
-```bash
-cd /opt/3xuisslcert-repo
-sudo git pull
-sudo bash install.sh
-```
-
----
-
-## Удаление
-
-Полный деинсталл нужен только если вы действительно хотите убрать проект.
-
-```bash
-sudo bash uninstall.sh
-```
-
-Это удалит:
-
-```bash
-/etc/cron.d/3xuisslcert
-/etc/cron.d/xui-certctl
-/etc/3xuisslcert.conf
-/usr/local/bin/xui-certctl
-/usr/local/sbin/xui-certctl
-/opt/3xuisslcert
 ```
 
 ---
@@ -312,12 +323,14 @@ sudo bash uninstall.sh
 
 ---
 
-## Примечание
+## Если сертификат обновился, но не применился
 
-Если после обновления сертификата панель **3x-ui / x-ui** не перезапускается автоматически, сначала проверь:
+Сначала проверь:
 
-- какой `Le_ReloadCmd` записан в `/root/.acme.sh/<ID>_ecc/<ID>.conf`
-- существует ли `/usr/local/sbin/xui-certctl`
-- существует ли `/opt/3xuisslcert/xui-certctl`
+1. Какой `Le_ReloadCmd` записан в `/root/.acme.sh/<ID>_ecc/<ID>.conf`
+2. Что существуют:
+   - `/opt/3xuisslcert/xui-certctl`
+   - `/usr/local/sbin/xui-certctl`
+3. Что `sudo /opt/3xuisslcert/xui-certctl postdeploy` реально перезапускает `x-ui`
 
-Начиная с `v1.0.4`, установщик специально создаёт совместимый путь `/usr/local/sbin/xui-certctl`, чтобы старые привязки `reloadcmd` не ломали автоматическое применение сертификата.
+Начиная с `v1.0.4`, а также в текущей `v1.0.5`, установщик специально создаёт совместимый путь `/usr/local/sbin/xui-certctl`, чтобы старые привязки `reloadcmd` не ломали автоматическое применение сертификата.
