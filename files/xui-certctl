@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.0.3"
+VERSION="1.0.4"
 
 BASE_DIR="${BASE_DIR:-/opt/3xuisslcert}"
 CONF_FILE="${CONF_FILE:-/etc/3xuisslcert.conf}"
@@ -17,9 +17,9 @@ SERVICE="${SERVICE:-x-ui}"
 CHALLENGE="${CHALLENGE:-standalone}"     # standalone | webroot
 WEBROOT="${WEBROOT:-/var/www/html}"
 
-UFW_TEMP_80="${UFW_TEMP_80:-auto}"
-UFW_OPEN80_ONLY_WHEN_DUE="${UFW_OPEN80_ONLY_WHEN_DUE:-yes}"
-UFW_OPEN80_WINDOW_SEC="${UFW_OPEN80_WINDOW_SEC:-900}"
+UFW_TEMP_80="${UFW_TEMP_80:-auto}"                    # auto|yes|no
+UFW_OPEN80_ONLY_WHEN_DUE="${UFW_OPEN80_ONLY_WHEN_DUE:-yes}"  # yes|no
+UFW_OPEN80_WINDOW_SEC="${UFW_OPEN80_WINDOW_SEC:-900}"        # default 15 min
 UFW_COMMENT="${UFW_COMMENT:-3xuisslcert-acme-temp}"
 
 RELOAD_CMD="${RELOAD_CMD:-$BASE_DIR/xui-certctl postdeploy}"
@@ -33,7 +33,7 @@ log() {
 usage() {
   cat <<'USG'
 3xuisslcert / xui-certctl
-Version: 1.0.3
+Version: 1.0.4
 
 Commands:
   xui-certctl sync [--id X] [--san Y ...] [--challenge standalone|webroot] [--webroot PATH]
@@ -80,6 +80,7 @@ detect_public_ip() {
 }
 
 if [[ -f "$CONF_FILE" ]]; then
+  # shellcheck disable=SC1090
   source "$CONF_FILE"
 fi
 

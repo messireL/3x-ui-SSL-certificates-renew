@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.0.3"
+VERSION="1.0.4"
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   echo "ERROR: run as root (use sudo)."
@@ -11,6 +11,7 @@ fi
 rm -f /etc/cron.d/3xuisslcert
 rm -f /etc/cron.d/xui-certctl
 rm -f /usr/local/bin/xui-certctl
+rm -f /usr/local/sbin/xui-certctl
 rm -f /etc/3xuisslcert.conf
 rm -rf /opt/3xuisslcert
 

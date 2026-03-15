@@ -1,31 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.0.3"
+VERSION="1.0.4"
 
 BASE_DIR="/opt/3xuisslcert"
 CONF_FILE="/etc/3xuisslcert.conf"
 BIN_LINK="/usr/local/bin/xui-certctl"
+LEGACY_LINK="/usr/local/sbin/xui-certctl"
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 MAIN_ID=""
 SAN_IDS=""
-CHALLENGE="standalone"
-WEBROOT="/var/www/html"
-SERVICE="x-ui"
-TARGET_BASE_DIR="/root/cert"
-TARGET_SUBDIR="ip"
-ACME_HOME="/root/.acme.sh"
-UFW_TEMP_80="auto"
-UFW_OPEN80_ONLY_WHEN_DUE="yes"
-UFW_OPEN80_WINDOW_SEC="900"
+CHALLENGE=""
+WEBROOT=""
+SERVICE=""
+TARGET_BASE_DIR=""
+TARGET_SUBDIR=""
+ACME_HOME=""
+UFW_TEMP_80=""
+UFW_OPEN80_ONLY_WHEN_DUE=""
+UFW_OPEN80_WINDOW_SEC=""
 RUN_SYNC="yes"
 AUTO="no"
 
 usage() {
   cat <<'USG'
 3xuisslcert installer
-Version: 1.0.3
+Version: 1.0.4
 
 Project path:
   /opt/3xuisslcert
@@ -37,8 +38,8 @@ Examples:
 
 Options:
   --auto
-  --id <ip-or-domain>
-  --san <ip-or-domain>
+  --id <ip-or-domain>              Optional. If omitted, installer auto-detects public IP.
+  --san <ip-or-domain>             Repeatable.
   --challenge standalone|webroot
   --webroot <path>
   --service <name>
@@ -48,11 +49,23 @@ Options:
   --ufw-window-sec <seconds>
   --ufw-open80-only-when-due yes|no
   --no-sync
+
+Migration:
+- legacy binary /usr/local/sbin/xui-certctl is replaced with a compatibility symlink
+- legacy cron /etc/cron.d/xui-certctl is removed
+- current cert binding is reinstalled to update reloadcmd
 USG
 }
 
 need_root() {
   [[ "${EUID:-$(id -u)}" -eq 0 ]] || { echo "ERROR: run as root"; exit 1; }
+}
+
+default_if_empty() {
+  local var="$1" val="$2"
+  if [[ -z "${!var:-}" ]]; then
+    printf -v "$var" '%s' "$val"
+  fi
 }
 
 detect_public_ip() {
@@ -88,11 +101,39 @@ prompt_default() {
   printf -v "$__var" '%s' "$__val"
 }
 
+load_existing_config() {
+  if [[ -f "$CONF_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$CONF_FILE"
+  elif [[ -f /etc/xui-certctl.conf ]]; then
+    # shellcheck disable=SC1090
+    source /etc/xui-certctl.conf
+    [[ -z "${MAIN_ID:-}" && -n "${ID:-}" ]] && MAIN_ID="$ID"
+  fi
+}
+
+rebind_current_cert() {
+  local install_cmd
+  [[ -n "${MAIN_ID:-}" ]] || return 0
+  [[ -x "$ACME_HOME/acme.sh" ]] || return 0
+
+  if "$ACME_HOME/acme.sh" --home "$ACME_HOME" --list 2>/dev/null | awk 'NR>1{print $1}' | grep -qx "$MAIN_ID"; then
+    echo "Rebinding acme install paths and reloadcmd for current MAIN_ID=$MAIN_ID ..."
+    install_cmd=(
+      "$ACME_HOME/acme.sh" --home "$ACME_HOME" --install-cert -d "$MAIN_ID" --ecc
+      --fullchain-file "$TARGET_BASE_DIR/$TARGET_SUBDIR/$MAIN_ID/fullchain.pem"
+      --key-file       "$TARGET_BASE_DIR/$TARGET_SUBDIR/$MAIN_ID/private.key"
+      --reloadcmd      "$BASE_DIR/xui-certctl postdeploy"
+    )
+    "${install_cmd[@]}" || true
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --auto) AUTO="yes"; shift 1 ;;
     --id) MAIN_ID="${2:-}"; shift 2 ;;
-    --san) SAN_IDS="${SAN_IDS} ${2:-}"; shift 2 ;;
+    --san) SAN_IDS="${SAN_IDS:-} ${2:-}"; shift 2 ;;
     --challenge) CHALLENGE="${2:-}"; shift 2 ;;
     --webroot) WEBROOT="${2:-}"; shift 2 ;;
     --service) SERVICE="${2:-}"; shift 2 ;;
@@ -108,32 +149,44 @@ while [[ $# -gt 0 ]]; do
 done
 
 need_root
+load_existing_config
+
+default_if_empty CHALLENGE "standalone"
+default_if_empty WEBROOT "/var/www/html"
+default_if_empty SERVICE "x-ui"
+default_if_empty TARGET_BASE_DIR "/root/cert"
+default_if_empty TARGET_SUBDIR "ip"
+default_if_empty ACME_HOME "/root/.acme.sh"
+default_if_empty UFW_TEMP_80 "auto"
+default_if_empty UFW_OPEN80_ONLY_WHEN_DUE "yes"
+default_if_empty UFW_OPEN80_WINDOW_SEC "900"
 
 det_ip="$(detect_public_ip)"
 det_fqdn="$(detect_fqdn)"
 
 if [[ "$AUTO" == "yes" ]]; then
   echo "Auto-detect: IP=${det_ip:-<none>} FQDN=${det_fqdn:-<none>}"
-  [[ -z "$MAIN_ID" ]] && prompt_default MAIN_ID "MAIN_ID" "${det_ip:-}"
+  [[ -z "${MAIN_ID:-}" ]] && prompt_default MAIN_ID "MAIN_ID" "${det_ip:-}"
   if [[ -n "$det_fqdn" && "$det_fqdn" != "$MAIN_ID" ]]; then
     read -r -p "Add hostname to SAN? ($det_fqdn) [y/N]: " a || true
     case "${a,,}" in
-      y|yes) SAN_IDS="${SAN_IDS} $det_fqdn" ;;
+      y|yes) SAN_IDS="${SAN_IDS:-} $det_fqdn" ;;
     esac
   fi
 fi
 
-if [[ -z "$MAIN_ID" ]]; then
+if [[ -z "${MAIN_ID:-}" ]]; then
   MAIN_ID="$det_ip"
 fi
 
-SAN_IDS="$(echo "$SAN_IDS" | xargs 2>/dev/null || true)"
-[[ -n "$MAIN_ID" ]] || { echo "ERROR: MAIN_ID empty and public IP autodetect failed"; exit 1; }
+SAN_IDS="$(echo "${SAN_IDS:-}" | xargs 2>/dev/null || true)"
+[[ -n "${MAIN_ID:-}" ]] || { echo "ERROR: MAIN_ID empty and public IP autodetect failed"; exit 1; }
 
 echo "Installing 3xuisslcert v$VERSION into $BASE_DIR ..."
 mkdir -p "$BASE_DIR"
 install -m 0755 "$PKG_DIR/files/xui-certctl" "$BASE_DIR/xui-certctl"
 ln -sfn "$BASE_DIR/xui-certctl" "$BIN_LINK"
+ln -sfn "$BASE_DIR/xui-certctl" "$LEGACY_LINK"
 
 cat >"$CONF_FILE" <<EOF
 VERSION="$VERSION"
@@ -163,7 +216,7 @@ else
   CRON_EXPR="12 4,16 * * *"
 fi
 
-cat >"/etc/cron.d/3xuisslcert" <<EOF
+cat >/etc/cron.d/3xuisslcert <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 $CRON_EXPR root $BASE_DIR/xui-certctl sync >/dev/null 2>&1
@@ -172,6 +225,8 @@ chmod 0644 /etc/cron.d/3xuisslcert
 rm -f /etc/cron.d/xui-certctl
 
 echo "cron installed: /etc/cron.d/3xuisslcert ($CRON_EXPR)"
+
+rebind_current_cert
 
 if [[ "$RUN_SYNC" == "yes" ]]; then
   "$BASE_DIR/xui-certctl" sync

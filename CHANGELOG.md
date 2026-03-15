@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## v1.0.4
+- migration release: no manual uninstall required
+- added compatibility symlink `/usr/local/sbin/xui-certctl -> /opt/3xuisslcert/xui-certctl`
+- installer now rebinds current certificate via `acme.sh --install-cert` to refresh reloadcmd
+- old cron `/etc/cron.d/xui-certctl` is removed automatically
+- README updated with migration workflow
+
 ## v1.0.3
 - fixed postdeploy when canonical certificate path equals destination path
 - x-ui restart now completes successfully after install/renew
