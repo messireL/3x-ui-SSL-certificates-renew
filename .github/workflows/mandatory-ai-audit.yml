@@ -1,0 +1,108 @@
+name: SSL certificates — isolated PR 1 acceptance
+
+# One-time bootstrap. Never merge this ref.
+
+on:
+  push:
+    branches:
+      - 'audit/pr1-exact-head-20261124'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: mandatory-ci-ai-1
+  cancel-in-progress: false
+
+jobs:
+  syntax:
+    name: Read-only Bash syntax on exact PR head
+    if: ${{ github.repository == 'messireL/3x-ui-SSL-certificates-renew' && github.actor == github.repository_owner && github.ref == 'refs/heads/audit/pr1-exact-head-20261124' && github.event_name == 'push' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 5
+    steps:
+      - name: Verify dedicated runner before checkout
+        shell: bash
+        run: |
+          clear 2>/dev/null || true
+          set -euo pipefail
+          case "${RUNNER_NAME:-}" in
+            ssl-certificates-renew-01|ssl-certificates-renew-02) ;;
+            *) echo "ERROR=UNAPPROVED_RUNNER"; exit 1 ;;
+          esac
+          echo "DEDICATED_RUNNER=$RUNNER_NAME"
+
+      - name: Verify exact owner-controlled open PR identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: '64eb662dd1cc9fc0bc5bbdf27b84cdbd4b6341ed'
+        run: |
+          clear 2>/dev/null || true
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.request
+          repo = os.environ["GITHUB_REPOSITORY"]
+          owner = repo.split("/")[0]
+          url = os.environ["GITHUB_API_URL"].rstrip("/") + "/repos/" + repo + "/pulls/1"
+          req = urllib.request.Request(url, headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"], "Accept": "application/vnd.github+json"})
+          with urllib.request.urlopen(req, timeout=30) as response:
+              pr = json.load(response)
+          if not (pr["state"] == "open" and pr["user"]["login"] == owner and
+                  pr["head"]["sha"] == os.environ["EXPECTED_HEAD"] and
+                  pr["head"]["repo"]["full_name"] == repo and
+                  pr["base"]["repo"]["full_name"] == repo and pr["base"]["ref"] == "main"):
+              raise SystemExit("ERROR=BOOTSTRAP_PR_IDENTITY")
+          print("BOOTSTRAP_PR_IDENTITY=PASS")
+          PY
+
+      - name: Checkout exact owner-controlled source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: '64eb662dd1cc9fc0bc5bbdf27b84cdbd4b6341ed'
+          persist-credentials: false
+          fetch-depth: 1
+          clean: true
+
+      - name: Parse scripts without executing installation or certificate operations
+        shell: bash
+        env:
+          EXPECTED_HEAD: '64eb662dd1cc9fc0bc5bbdf27b84cdbd4b6341ed'
+        run: |
+          clear 2>/dev/null || true
+          set -euo pipefail
+          [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          for file in install.sh uninstall.sh files/xui-certctl; do
+            test -f "$file" && test ! -L "$file"
+            env -u BASH_ENV -u ENV bash --noprofile --norc -n "$file"
+            printf 'BASH_SYNTAX=PASS FILE=%s\n' "$file"
+          done
+          test -z "$(git status --porcelain)"
+          echo "EXACT_HEAD_SYNTAX=PASS"
+          echo "INSTALL_UNINSTALL_CERT_OPERATIONS_EXECUTED=NO"
+
+  review:
+    needs: syntax
+    if: ${{ github.repository == 'messireL/3x-ui-SSL-certificates-renew' && github.actor == github.repository_owner && github.ref == 'refs/heads/audit/pr1-exact-head-20261124' && github.event_name == 'push' && needs.syntax.result == 'success' }}
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: messireL/ai-ci-orchestrator/.github/workflows/minimax-review.yml@e38f3790cea0e0e1c1a0b8b5ab92445df3318fbd
+    with:
+      repository: ${{ github.repository }}
+      pr_number: '1'
+      head_sha: '64eb662dd1cc9fc0bc5bbdf27b84cdbd4b6341ed'
+
+  enforce:
+    needs: [syntax, review]
+    if: ${{ always() && github.repository == 'messireL/3x-ui-SSL-certificates-renew' && github.actor == github.repository_owner && github.ref == 'refs/heads/audit/pr1-exact-head-20261124' && github.event_name == 'push' && needs.syntax.result == 'success' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: messireL/ai-ci-orchestrator/.github/workflows/mandatory-ai-findings-policy.yml@e38f3790cea0e0e1c1a0b8b5ab92445df3318fbd
+    with:
+      repository: ${{ github.repository }}
+      pr_number: '1'
+      head_sha: '64eb662dd1cc9fc0bc5bbdf27b84cdbd4b6341ed'
