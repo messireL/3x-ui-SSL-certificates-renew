@@ -1,0 +1,81 @@
+name: Mandatory CI and AI review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: mandatory-ci-ai-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  syntax:
+    name: Read-only Bash syntax on exact PR head
+    if: ${{ github.repository == 'messireL/3x-ui-SSL-certificates-renew' && github.actor == github.repository_owner && github.event.pull_request.user.login == github.repository_owner && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository && github.event.pull_request.base.ref == 'main' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 5
+    steps:
+      - name: Verify dedicated runner before checkout
+        shell: bash
+        run: |
+          clear 2>/dev/null || true
+          set -euo pipefail
+          case "${RUNNER_NAME:-}" in
+            ssl-certificates-renew-01|ssl-certificates-renew-02) ;;
+            *) echo "ERROR=UNAPPROVED_RUNNER"; exit 1 ;;
+          esac
+          echo "DEDICATED_RUNNER=$RUNNER_NAME"
+
+      - name: Checkout exact owner-controlled source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          clean: true
+
+      - name: Parse scripts without executing installation or certificate operations
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          clear 2>/dev/null || true
+          set -euo pipefail
+          [[ "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          for file in install.sh uninstall.sh files/xui-certctl; do
+            test -f "$file" && test ! -L "$file"
+            env -u BASH_ENV -u ENV bash --noprofile --norc -n "$file"
+            printf 'BASH_SYNTAX=PASS FILE=%s\n' "$file"
+          done
+          test -z "$(git status --porcelain)"
+          echo "EXACT_HEAD_SYNTAX=PASS"
+          echo "INSTALL_UNINSTALL_CERT_OPERATIONS_EXECUTED=NO"
+
+  review:
+    needs: syntax
+    if: ${{ github.repository == 'messireL/3x-ui-SSL-certificates-renew' && github.actor == github.repository_owner && github.event.pull_request.user.login == github.repository_owner && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository && github.event.pull_request.base.ref == 'main' && needs.syntax.result == 'success' }}
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: messireL/ai-ci-orchestrator/.github/workflows/minimax-review.yml@e38f3790cea0e0e1c1a0b8b5ab92445df3318fbd
+    with:
+      repository: ${{ github.repository }}
+      pr_number: ${{ github.event.pull_request.number }}
+      head_sha: ${{ github.event.pull_request.head.sha }}
+
+  enforce:
+    needs: [syntax, review]
+    if: ${{ always() && github.repository == 'messireL/3x-ui-SSL-certificates-renew' && github.actor == github.repository_owner && github.event.pull_request.user.login == github.repository_owner && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository && github.event.pull_request.base.ref == 'main' && needs.syntax.result == 'success' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: messireL/ai-ci-orchestrator/.github/workflows/mandatory-ai-findings-policy.yml@e38f3790cea0e0e1c1a0b8b5ab92445df3318fbd
+    with:
+      repository: ${{ github.repository }}
+      pr_number: ${{ github.event.pull_request.number }}
+      head_sha: ${{ github.event.pull_request.head.sha }}
